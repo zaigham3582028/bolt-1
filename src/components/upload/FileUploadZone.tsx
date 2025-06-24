@@ -15,11 +15,14 @@ import {
   Minimize2,
   Maximize2,
   Play,
-  Pause
+  Pause,
+  FolderPlus,
+  Zap
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { cn, formatFileSize } from '@/lib/utils';
+import { cn, formatFileSize, generateId } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
+import { FileItem } from '@/components/file-grid/file-card';
 
 interface FileUploadZoneProps {
   onFilesUploaded?: (files: File[]) => void;
@@ -37,6 +40,7 @@ interface UploadProgress {
   error?: string;
   thumbnail?: string;
   fileUrl?: string;
+  fileItem?: FileItem;
 }
 
 const FileUploadZone: React.FC<FileUploadZoneProps> = ({
@@ -52,9 +56,10 @@ const FileUploadZone: React.FC<FileUploadZoneProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const { addFiles, preferences } = useAppStore();
+  const { addFiles, preferences, batchAddTags } = useAppStore();
 
   const getFileIcon = (file: File) => {
     const type = file.type.split('/')[0];
@@ -77,6 +82,26 @@ const FileUploadZone: React.FC<FileUploadZoneProps> = ({
       default:
         return <FileIcon className="h-6 w-6" />;
     }
+  };
+
+  const getFileType = (file: File): FileItem['type'] => {
+    const mimeType = file.type.toLowerCase();
+    
+    if (mimeType.startsWith('image/')) return 'image';
+    if (mimeType.startsWith('video/')) return 'video';
+    if (mimeType.startsWith('audio/')) return 'audio';
+    if (mimeType.includes('pdf') || mimeType.includes('document') || mimeType.includes('text')) return 'document';
+    if (mimeType.includes('zip') || mimeType.includes('rar') || mimeType.includes('archive')) return 'archive';
+    
+    // Check file extension as fallback
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(extension || '')) return 'image';
+    if (['mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv'].includes(extension || '')) return 'video';
+    if (['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a'].includes(extension || '')) return 'audio';
+    if (['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'].includes(extension || '')) return 'document';
+    if (['zip', 'rar', '7z', 'tar', 'gz'].includes(extension || '')) return 'archive';
+    
+    return 'document'; // Default fallback
   };
 
   const validateFile = (file: File): string | null => {
@@ -121,8 +146,10 @@ const FileUploadZone: React.FC<FileUploadZoneProps> = ({
             ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
             resolve(canvas.toDataURL('image/jpeg', 0.9));
           };
+          img.onerror = () => resolve(undefined);
           img.src = e.target?.result as string;
         };
+        reader.onerror = () => resolve(undefined);
         reader.readAsDataURL(file);
       });
     }
@@ -163,6 +190,111 @@ const FileUploadZone: React.FC<FileUploadZoneProps> = ({
     return undefined;
   };
 
+  const extractMetadata = async (file: File): Promise<any> => {
+    const metadata: any = {};
+    
+    if (file.type.startsWith('image/')) {
+      return new Promise((resolve) => {
+        const img = document.createElement('img');
+        img.onload = () => {
+          resolve({
+            width: img.width,
+            height: img.height,
+            resolution: `${img.width}x${img.height}`,
+            aspectRatio: img.width / img.height
+          });
+        };
+        img.onerror = () => resolve({});
+        img.src = URL.createObjectURL(file);
+      });
+    }
+    
+    if (file.type.startsWith('video/')) {
+      return new Promise((resolve) => {
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        
+        video.onloadedmetadata = () => {
+          resolve({
+            width: video.videoWidth,
+            height: video.videoHeight,
+            resolution: `${video.videoWidth}x${video.videoHeight}`,
+            duration: video.duration,
+            aspectRatio: video.videoWidth / video.videoHeight
+          });
+          URL.revokeObjectURL(video.src);
+        };
+        
+        video.onerror = () => {
+          resolve({});
+          URL.revokeObjectURL(video.src);
+        };
+        
+        video.src = URL.createObjectURL(file);
+      });
+    }
+    
+    if (file.type.startsWith('audio/')) {
+      return new Promise((resolve) => {
+        const audio = document.createElement('audio');
+        audio.preload = 'metadata';
+        
+        audio.onloadedmetadata = () => {
+          resolve({
+            duration: audio.duration,
+            bitrate: 'Unknown'
+          });
+          URL.revokeObjectURL(audio.src);
+        };
+        
+        audio.onerror = () => {
+          resolve({});
+          URL.revokeObjectURL(audio.src);
+        };
+        
+        audio.src = URL.createObjectURL(file);
+      });
+    }
+    
+    return metadata;
+  };
+
+  const generateSmartTags = (file: File): string[] => {
+    const tags: string[] = [];
+    const fileName = file.name.toLowerCase();
+    
+    // Extract from filename
+    const nameParts = fileName
+      .replace(/\.[^/.]+$/, '') // Remove extension
+      .split(/[._-\s]+/)
+      .filter(part => part.length > 2);
+    
+    // Add relevant parts as tags
+    nameParts.forEach(part => {
+      if (!['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her', 'was', 'one', 'our', 'out', 'day', 'get', 'has', 'him', 'his', 'how', 'its', 'may', 'new', 'now', 'old', 'see', 'two', 'way', 'who', 'boy', 'did', 'man', 'end', 'few', 'got', 'let', 'put', 'say', 'she', 'too', 'use'].includes(part)) {
+        tags.push(part);
+      }
+    });
+    
+    // Add type-based tags
+    const fileType = getFileType(file);
+    tags.push(fileType);
+    
+    // Add date-based tags
+    const now = new Date();
+    tags.push(now.getFullYear().toString());
+    tags.push(now.toLocaleDateString('en-US', { month: 'long' }).toLowerCase());
+    
+    // Add size-based tags
+    if (file.size > 100 * 1024 * 1024) {
+      tags.push('large-file');
+    } else if (file.size < 1024 * 1024) {
+      tags.push('small-file');
+    }
+    
+    return [...new Set(tags)].slice(0, 8); // Limit to 8 unique tags
+  };
+
   const processFiles = async (files: File[]) => {
     setIsUploading(true);
     setIsPaused(false);
@@ -191,7 +323,9 @@ const FileUploadZone: React.FC<FileUploadZoneProps> = ({
 
     setUploadProgress(progressItems);
 
-    // Process valid files one by one
+    // Process valid files
+    const processedFiles: FileItem[] = [];
+    
     for (let i = 0; i < validFiles.length; i++) {
       if (isPaused) {
         await new Promise(resolve => {
@@ -212,29 +346,47 @@ const FileUploadZone: React.FC<FileUploadZoneProps> = ({
         // Update status to processing
         setUploadProgress(prev => prev.map(item => 
           item.file === file 
-            ? { ...item, status: 'processing' }
+            ? { ...item, status: 'processing', progress: 10 }
             : item
         ));
 
         // Simulate realistic upload progress
-        for (let progress = 0; progress <= 80; progress += Math.random() * 15 + 5) {
+        for (let progress = 10; progress <= 40; progress += Math.random() * 10 + 5) {
           if (isPaused) break;
           
           await new Promise(resolve => setTimeout(resolve, 50 + Math.random() * 100));
           setUploadProgress(prev => prev.map(item => 
             item.file === file 
-              ? { ...item, progress: Math.min(progress, 80) }
+              ? { ...item, progress: Math.min(progress, 40) }
               : item
           ));
         }
 
-        // Generate high-quality thumbnail
+        // Generate thumbnail
+        setUploadProgress(prev => prev.map(item => 
+          item.file === file 
+            ? { ...item, progress: 50 }
+            : item
+        ));
+        
         const thumbnail = await generateHighQualityThumbnail(file);
+        
+        // Extract metadata
+        setUploadProgress(prev => prev.map(item => 
+          item.file === file 
+            ? { ...item, progress: 70 }
+            : item
+        ));
+        
+        const metadata = await extractMetadata(file);
+        
+        // Generate smart tags
+        const smartTags = generateSmartTags(file);
         
         // Create file URL for actual playback
         const fileUrl = URL.createObjectURL(file);
         
-        // Update progress to show thumbnail generation
+        // Update progress
         setUploadProgress(prev => prev.map(item => 
           item.file === file 
             ? { ...item, progress: 90, thumbnail, fileUrl }
@@ -242,36 +394,32 @@ const FileUploadZone: React.FC<FileUploadZoneProps> = ({
         ));
 
         // Create file item with actual file data
-        const fileItem = {
-          id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+        const fileItem: FileItem = {
+          id: generateId(),
           name: file.name,
-          type: file.type.startsWith('image/') ? 'image' as const :
-                file.type.startsWith('video/') ? 'video' as const :
-                file.type.startsWith('audio/') ? 'audio' as const :
-                file.type.includes('pdf') || file.type.includes('document') ? 'document' as const :
-                'archive' as const,
+          type: getFileType(file),
           size: file.size,
-          duration: file.type.startsWith('video/') || file.type.startsWith('audio/') ? 0 : undefined,
+          duration: metadata.duration || undefined,
           thumbnail,
           createdAt: new Date(),
           modifiedAt: new Date(file.lastModified),
           isFavorite: false,
-          tags: [],
+          tags: smartTags,
           metadata: {
+            ...metadata,
             originalFile: file,
             fileUrl,
-            width: file.type.startsWith('image/') ? undefined : undefined,
-            height: file.type.startsWith('image/') ? undefined : undefined,
+            mimeType: file.type,
+            lastModified: file.lastModified
           }
         };
 
-        // Add to store
-        addFiles([fileItem]);
+        processedFiles.push(fileItem);
 
         // Mark as completed
         setUploadProgress(prev => prev.map(item => 
           item.file === file 
-            ? { ...item, progress: 100, status: 'completed' }
+            ? { ...item, progress: 100, status: 'completed', fileItem }
             : item
         ));
 
@@ -279,11 +427,23 @@ const FileUploadZone: React.FC<FileUploadZoneProps> = ({
         await new Promise(resolve => setTimeout(resolve, 200));
 
       } catch (error) {
+        console.error('Error processing file:', error);
         setUploadProgress(prev => prev.map(item => 
           item.file === file 
             ? { ...item, status: 'error', error: 'Failed to process file' }
             : item
         ));
+      }
+    }
+
+    // Add all processed files to the store at once
+    if (processedFiles.length > 0) {
+      addFiles(processedFiles);
+      
+      // Auto-add tags to all uploaded files
+      const allTags = [...new Set(processedFiles.flatMap(f => f.tags))];
+      if (allTags.length > 0) {
+        batchAddTags(processedFiles.map(f => f.id), allTags);
       }
     }
 
@@ -360,6 +520,16 @@ const FileUploadZone: React.FC<FileUploadZoneProps> = ({
     }
   };
 
+  const retryFailed = () => {
+    const failedFiles = uploadProgress
+      .filter(item => item.status === 'error')
+      .map(item => item.file);
+    
+    if (failedFiles.length > 0) {
+      processFiles(failedFiles);
+    }
+  };
+
   return (
     <div className={cn("space-y-4", className)}>
       {/* Upload Zone - Only show when not uploading or when minimized */}
@@ -421,6 +591,50 @@ const FileUploadZone: React.FC<FileUploadZoneProps> = ({
                   }
                 </p>
               </div>
+
+              {/* Advanced Options Toggle */}
+              <Button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowAdvanced(!showAdvanced);
+                }}
+                variant="ghost"
+                size="sm"
+                className="text-white/60 hover:text-white hover:bg-white/10"
+              >
+                <Zap className="h-4 w-4 mr-2" />
+                {showAdvanced ? 'Hide' : 'Show'} Advanced Options
+              </Button>
+
+              {/* Advanced Options */}
+              <AnimatePresence>
+                {showAdvanced && (
+                  <motion.div
+                    className="w-full max-w-md space-y-3 p-4 bg-white/5 rounded-lg border border-white/10"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-white/70">Auto-generate tags</span>
+                      <div className="w-2 h-2 bg-green-500 rounded-full" />
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-white/70">Extract metadata</span>
+                      <div className="w-2 h-2 bg-green-500 rounded-full" />
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-white/70">Generate thumbnails</span>
+                      <div className="w-2 h-2 bg-green-500 rounded-full" />
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-white/70">Smart categorization</span>
+                      <div className="w-2 h-2 bg-green-500 rounded-full" />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </motion.div>
         )}
@@ -455,6 +669,17 @@ const FileUploadZone: React.FC<FileUploadZoneProps> = ({
                     className="h-6 w-6 text-white/70 hover:text-white"
                   >
                     {isPaused ? <Play className="h-3 w-3" /> : <Pause className="h-3 w-3" />}
+                  </Button>
+                )}
+                {uploadProgress.some(item => item.status === 'error') && (
+                  <Button
+                    onClick={retryFailed}
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-white/70 hover:text-white"
+                    title="Retry failed uploads"
+                  >
+                    <RotateCw className="h-3 w-3" />
                   </Button>
                 )}
                 <Button
@@ -565,6 +790,25 @@ const FileUploadZone: React.FC<FileUploadZoneProps> = ({
                               <span className="text-white/60 text-xs min-w-[35px]">
                                 {item.progress}%
                               </span>
+                            </div>
+                          )}
+                          
+                          {/* Show generated tags for completed files */}
+                          {item.status === 'completed' && item.fileItem && item.fileItem.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {item.fileItem.tags.slice(0, 3).map((tag, tagIndex) => (
+                                <span
+                                  key={tagIndex}
+                                  className="px-1.5 py-0.5 bg-blue-500/20 text-blue-300 text-xs rounded"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                              {item.fileItem.tags.length > 3 && (
+                                <span className="px-1.5 py-0.5 bg-white/10 text-white/50 text-xs rounded">
+                                  +{item.fileItem.tags.length - 3}
+                                </span>
+                              )}
                             </div>
                           )}
                         </div>

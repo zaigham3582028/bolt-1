@@ -179,14 +179,68 @@ const defaultPreferences: UserPreferences = {
   maxThumbnailSize: 400,
 };
 
+// Sample data for demonstration
+const sampleFiles: FileItem[] = [
+  {
+    id: 'sample-1',
+    name: 'Welcome to Data Platform.mp4',
+    type: 'video',
+    size: 45678912,
+    duration: 240,
+    thumbnail: 'https://images.pexels.com/photos/1190298/pexels-photo-1190298.jpeg?auto=compress&cs=tinysrgb&w=400&h=300',
+    createdAt: new Date('2024-01-15'),
+    modifiedAt: new Date('2024-01-15'),
+    isFavorite: true,
+    tags: ['welcome', 'tutorial', 'platform'],
+    metadata: {
+      width: 1920,
+      height: 1080,
+      resolution: '1080p',
+      codec: 'H.264',
+      bitrate: '2.5 Mbps'
+    }
+  },
+  {
+    id: 'sample-2',
+    name: 'Sample Landscape.jpg',
+    type: 'image',
+    size: 5432109,
+    thumbnail: 'https://images.pexels.com/photos/358482/pexels-photo-358482.jpeg?auto=compress&cs=tinysrgb&w=400&h=300',
+    createdAt: new Date('2024-01-08'),
+    modifiedAt: new Date('2024-01-08'),
+    isFavorite: false,
+    tags: ['landscape', 'nature', 'sample'],
+    metadata: {
+      width: 4000,
+      height: 3000,
+      resolution: '4000x3000'
+    }
+  },
+  {
+    id: 'sample-3',
+    name: 'Demo Audio Track.mp3',
+    type: 'audio',
+    size: 8765432,
+    duration: 180,
+    thumbnail: 'https://images.pexels.com/photos/1190298/pexels-photo-1190298.jpeg?auto=compress&cs=tinysrgb&w=400&h=300',
+    createdAt: new Date('2024-01-05'),
+    modifiedAt: new Date('2024-01-05'),
+    isFavorite: false,
+    tags: ['audio', 'demo', 'music'],
+    metadata: {
+      bitrate: '320 kbps'
+    }
+  }
+];
+
 export const useAppStore = create<AppState>()(
   immer((set, get) => ({
-    // Initial State - Fresh start with no files
-    files: [],
+    // Initial State - Start with sample files for demonstration
+    files: sampleFiles,
     selectedFiles: new Set(),
     favoriteClips: [],
     categories: [],
-    tags: [],
+    tags: ['welcome', 'tutorial', 'platform', 'landscape', 'nature', 'sample', 'audio', 'demo', 'music'],
     searchQuery: '',
     searchFilters: [],
     searchHistory: [],
@@ -196,9 +250,9 @@ export const useAppStore = create<AppState>()(
     sortOrder: 'asc',
     preferences: defaultPreferences,
     analytics: {
-      totalFiles: 0,
-      totalSize: 0,
-      mostUsedTags: [],
+      totalFiles: sampleFiles.length,
+      totalSize: sampleFiles.reduce((sum, file) => sum + file.size, 0),
+      mostUsedTags: ['sample', 'demo', 'tutorial'],
       recentActivity: [],
     },
 
@@ -207,26 +261,76 @@ export const useAppStore = create<AppState>()(
       state.files = files;
       state.analytics.totalFiles = files.length;
       state.analytics.totalSize = files.reduce((sum, file) => sum + file.size, 0);
+      
+      // Update tags from all files
+      const allTags = new Set<string>();
+      files.forEach(file => {
+        file.tags.forEach(tag => allTags.add(tag));
+      });
+      state.tags = Array.from(allTags);
     }),
 
     addFiles: (files) => set((state) => {
       state.files.push(...files);
       state.analytics.totalFiles = state.files.length;
       state.analytics.totalSize = state.files.reduce((sum, file) => sum + file.size, 0);
+      
+      // Update tags from new files
+      const newTags = new Set(state.tags);
+      files.forEach(file => {
+        file.tags.forEach(tag => newTags.add(tag));
+      });
+      state.tags = Array.from(newTags);
+      
+      // Update recent activity
+      state.analytics.recentActivity.unshift({
+        type: 'upload',
+        count: files.length,
+        timestamp: new Date(),
+        files: files.map(f => ({ id: f.id, name: f.name }))
+      });
+      
+      // Keep only last 50 activities
+      state.analytics.recentActivity = state.analytics.recentActivity.slice(0, 50);
     }),
 
     updateFile: (id, updates) => set((state) => {
       const index = state.files.findIndex(f => f.id === id);
       if (index !== -1) {
         Object.assign(state.files[index], updates);
+        
+        // Update tags if tags were modified
+        if (updates.tags) {
+          const allTags = new Set<string>();
+          state.files.forEach(file => {
+            file.tags.forEach(tag => allTags.add(tag));
+          });
+          state.tags = Array.from(allTags);
+        }
       }
     }),
 
     deleteFiles: (ids) => set((state) => {
+      const deletedFiles = state.files.filter(f => ids.includes(f.id));
       state.files = state.files.filter(f => !ids.includes(f.id));
       state.selectedFiles = new Set([...state.selectedFiles].filter(id => !ids.includes(id)));
       state.analytics.totalFiles = state.files.length;
       state.analytics.totalSize = state.files.reduce((sum, file) => sum + file.size, 0);
+      
+      // Update recent activity
+      state.analytics.recentActivity.unshift({
+        type: 'delete',
+        count: deletedFiles.length,
+        timestamp: new Date(),
+        files: deletedFiles.map(f => ({ id: f.id, name: f.name }))
+      });
+      
+      // Update tags
+      const allTags = new Set<string>();
+      state.files.forEach(file => {
+        file.tags.forEach(tag => allTags.add(tag));
+      });
+      state.tags = Array.from(allTags);
     }),
 
     // Selection Actions
@@ -251,6 +355,14 @@ export const useAppStore = create<AppState>()(
       const file = state.files.find(f => f.id === id);
       if (file) {
         file.isFavorite = !file.isFavorite;
+        
+        // Update recent activity
+        state.analytics.recentActivity.unshift({
+          type: file.isFavorite ? 'favorite' : 'unfavorite',
+          count: 1,
+          timestamp: new Date(),
+          files: [{ id: file.id, name: file.name }]
+        });
       }
     }),
 
@@ -419,8 +531,21 @@ export const useAppStore = create<AppState>()(
     }),
 
     batchDeleteFiles: (ids) => set((state) => {
+      const deletedFiles = state.files.filter(f => ids.includes(f.id));
       state.files = state.files.filter(f => !ids.includes(f.id));
       state.selectedFiles = new Set([...state.selectedFiles].filter(id => !ids.includes(id)));
+      
+      // Update analytics
+      state.analytics.totalFiles = state.files.length;
+      state.analytics.totalSize = state.files.reduce((sum, file) => sum + file.size, 0);
+      
+      // Update recent activity
+      state.analytics.recentActivity.unshift({
+        type: 'batch_delete',
+        count: deletedFiles.length,
+        timestamp: new Date(),
+        files: deletedFiles.map(f => ({ id: f.id, name: f.name }))
+      });
     }),
 
     batchAddTags: (ids, tags) => set((state) => {
@@ -442,6 +567,13 @@ export const useAppStore = create<AppState>()(
           file.tags = file.tags.filter(tag => !tags.includes(tag));
         }
       });
+      
+      // Update global tags
+      const allTags = new Set<string>();
+      state.files.forEach(file => {
+        file.tags.forEach(tag => allTags.add(tag));
+      });
+      state.tags = Array.from(allTags);
     }),
   }))
 );

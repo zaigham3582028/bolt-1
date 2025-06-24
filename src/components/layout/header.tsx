@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Filter, Grid, List, MoreVertical, Upload, Download, RefreshCw, Settings, User, Bell, X, Sliders, Layout, Palette, Monitor, Zap, Columns, Rows, Space as Spacing, Eye, EyeOff, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Search, Filter, Grid, List, MoreVertical, Upload, Download, RefreshCw, Settings, User, Bell, X, Sliders, Layout, Palette, Monitor, Zap, Columns, Rows, Space as Spacing, Eye, EyeOff, ToggleLeft, ToggleRight, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import FileUploadZone from '@/components/upload/FileUploadZone';
@@ -31,7 +31,8 @@ const Header: React.FC<HeaderProps> = ({
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showAppSettings, setShowAppSettings] = useState(false);
   const [showGridSettings, setShowGridSettings] = useState(false);
-  const { preferences, updatePreferences } = useAppStore();
+  const [uploadSuccess, setUploadSuccess] = useState(false);
+  const { preferences, updatePreferences, files } = useAppStore();
 
   const handleUpload = () => {
     setShowUploadModal(true);
@@ -45,6 +46,17 @@ const Header: React.FC<HeaderProps> = ({
   const handleDownloadSelected = () => {
     // TODO: Implement batch download functionality
     console.log('Downloading selected files...');
+  };
+
+  const handleFilesUploaded = (uploadedFiles: File[]) => {
+    console.log('Files uploaded successfully:', uploadedFiles);
+    setUploadSuccess(true);
+    setShowUploadModal(false);
+    
+    // Show success message briefly
+    setTimeout(() => {
+      setUploadSuccess(false);
+    }, 3000);
   };
 
   return (
@@ -87,6 +99,21 @@ const Header: React.FC<HeaderProps> = ({
               </Button>
             </motion.div>
           )}
+
+          {/* Upload Success Indicator */}
+          {uploadSuccess && (
+            <motion.div
+              className="flex items-center gap-2 px-3 py-1 bg-green-500/20 border border-green-500/30 rounded-lg"
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+            >
+              <CheckCircle className="h-4 w-4 text-green-400" />
+              <span className="text-sm text-green-400 font-medium">
+                Files uploaded successfully!
+              </span>
+            </motion.div>
+          )}
         </div>
 
         {/* Center Section */}
@@ -96,6 +123,7 @@ const Header: React.FC<HeaderProps> = ({
             variant="ghost"
             size="icon"
             className="text-white/70 hover:bg-white/10 hover:text-white"
+            title="Refresh files"
           >
             <RefreshCw className="h-4 w-4" />
           </Button>
@@ -104,6 +132,7 @@ const Header: React.FC<HeaderProps> = ({
             variant="ghost"
             size="icon"
             className="text-white/70 hover:bg-white/10 hover:text-white"
+            title="Filter files"
           >
             <Filter className="h-4 w-4" />
           </Button>
@@ -117,6 +146,7 @@ const Header: React.FC<HeaderProps> = ({
                 "h-7 px-2 text-white/70 hover:bg-white/10 hover:text-white",
                 viewMode === 'grid' && "bg-white/20 text-white"
               )}
+              title="Grid view"
             >
               <Grid className="h-3 w-3" />
             </Button>
@@ -128,6 +158,7 @@ const Header: React.FC<HeaderProps> = ({
                 "h-7 px-2 text-white/70 hover:bg-white/10 hover:text-white",
                 viewMode === 'list' && "bg-white/20 text-white"
               )}
+              title="List view"
             >
               <List className="h-3 w-3" />
             </Button>
@@ -150,6 +181,7 @@ const Header: React.FC<HeaderProps> = ({
             variant="ghost"
             size="icon"
             className="text-white/70 hover:bg-white/10 hover:text-white"
+            title="Notifications"
           >
             <Bell className="h-4 w-4" />
           </Button>
@@ -161,6 +193,7 @@ const Header: React.FC<HeaderProps> = ({
               variant="ghost"
               size="icon"
               className="text-white/70 hover:bg-white/10 hover:text-white"
+              title="Grid settings"
             >
               <Sliders className="h-4 w-4" />
             </Button>
@@ -287,6 +320,13 @@ const Header: React.FC<HeaderProps> = ({
                       ))}
                     </div>
                   </div>
+
+                  {/* File Count Display */}
+                  <div className="pt-2 border-t border-white/10">
+                    <div className="text-xs text-white/50">
+                      Total files: {files.length}
+                    </div>
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -297,6 +337,7 @@ const Header: React.FC<HeaderProps> = ({
             variant="ghost"
             size="icon"
             className="text-white/70 hover:bg-white/10 hover:text-white"
+            title="App settings"
           >
             <Settings className="h-4 w-4" />
           </Button>
@@ -305,6 +346,7 @@ const Header: React.FC<HeaderProps> = ({
             variant="ghost"
             size="icon"
             className="text-white/70 hover:bg-white/10 hover:text-white"
+            title="User profile"
           >
             <User className="h-4 w-4" />
           </Button>
@@ -313,6 +355,7 @@ const Header: React.FC<HeaderProps> = ({
             variant="ghost"
             size="icon"
             className="text-white/70 hover:bg-white/10 hover:text-white"
+            title="More options"
           >
             <MoreVertical className="h-4 w-4" />
           </Button>
@@ -347,12 +390,10 @@ const Header: React.FC<HeaderProps> = ({
               </div>
               
               <FileUploadZone
-                onFilesUploaded={(files) => {
-                  console.log('Files uploaded:', files);
-                  setShowUploadModal(false);
-                }}
+                onFilesUploaded={handleFilesUploaded}
                 multiple={true}
                 maxFileSize={500 * 1024 * 1024} // 500MB
+                acceptedTypes={['*']} // Accept all file types
               />
             </div>
           </motion.div>
